@@ -97,6 +97,58 @@
               </ion-card-content>
             </ion-card>
           </div>
+
+          <!-- Conflict Detection -->
+          <div v-if="conflicts.length > 0" class="conflict-detection">
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>
+                  <ion-icon :icon="warningOutline" />
+                  Scheduling Analysis
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                <div class="conflicts-list">
+                  <ion-item 
+                    v-for="conflict in conflicts" 
+                    :key="`${conflict.type}-${conflict.message}`"
+                    class="conflict-item"
+                  >
+                    <ion-icon 
+                      slot="start" 
+                      :icon="getConflictIcon(conflict.type)" 
+                      :color="getConflictColor(conflict.severity)"
+                    />
+                    <ion-label>
+                      <h4 :class="`conflict-${conflict.severity}`">
+                        {{ conflict.message }}
+                      </h4>
+                      <div v-if="conflict.suggestions?.length" class="conflict-suggestions">
+                        <ion-note color="medium">Suggestions:</ion-note>
+                        <ul>
+                          <li v-for="suggestion in conflict.suggestions" :key="suggestion">
+                            {{ suggestion }}
+                          </li>
+                        </ul>
+                      </div>
+                      <div v-if="conflict.conflictingEvents.length > 0" class="conflicting-events">
+                        <ion-note color="medium">
+                          Conflicts with {{ conflict.conflictingEvents.length }} 
+                          {{ conflict.conflictingEvents.length === 1 ? 'event' : 'events' }}
+                        </ion-note>
+                      </div>
+                    </ion-label>
+                    <ion-badge 
+                      slot="end" 
+                      :color="getConflictColor(conflict.severity)"
+                    >
+                      {{ conflict.severity.toUpperCase() }}
+                    </ion-badge>
+                  </ion-item>
+                </div>
+              </ion-card-content>
+            </ion-card>
+          </div>
           
           <ion-item>
             <ion-textarea
@@ -360,8 +412,10 @@
 import { ref, computed, watch } from 'vue';
 import { api } from '@/lib/api';
 import { liturgicalCalendar } from '@/services/liturgicalCalendar';
+import { conflictDetection } from '@/services/conflictDetection';
 import type { ParishEvent, EventSchedule, WeekDay, EventType } from '@/shared/types';
 import type { EventSuggestion, LiturgicalDay } from '@/services/liturgicalCalendar';
+import type { ScheduleConflict } from '@/services/conflictDetection';
 import {
   IonModal,
   IonHeader,
@@ -394,7 +448,10 @@ import {
   addOutline,
   sparklesOutline,
   calendarOutline,
-  timeOutline
+  timeOutline,
+  warningOutline,
+  peopleOutline,
+  informationCircleOutline
 } from 'ionicons/icons';
 
 interface Props {
@@ -419,6 +476,8 @@ const saving = ref(false);
 const showAddLocation = ref(false);
 const showAddPriest = ref(false);
 const liturgicalInfo = ref<LiturgicalDay | null>(null);
+const conflicts = ref<ScheduleConflict[]>([]);
+const checkingConflicts = ref(false);
 
 const formData = ref({
   name: '',
@@ -471,7 +530,22 @@ watch(() => formData.value.schedule.startDate, (newStartDate) => {
   if (newStartDate && formData.value.isRecurring) {
     updateLiturgicalInfo(new Date(newStartDate));
   }
+  checkForConflicts();
 });
+
+// Watch for form changes that might create conflicts
+watch(() => [
+  formData.value.locationId,
+  formData.value.celebrantId,
+  formData.value.assistantIds,
+  formData.value.schedule.startTime,
+  formData.value.schedule.endTime,
+  formData.value.schedule.byDay,
+  formData.value.specificDate,
+  formData.value.isRecurring
+], () => {
+  checkForConflicts();
+}, { deep: true });
 
 function resetForm() {
   if (props.event) {
@@ -629,6 +703,66 @@ function applySuggestion(suggestion: EventSuggestion) {
     formData.value.schedule.startTime = suggestion.recommendedTime;
   }
 }
+
+async function checkForConflicts() {
+  // Debounce conflict checking
+  if (checkingConflicts.value) return;
+  
+  checkingConflicts.value = true;
+  
+  try {
+    // Create a temporary event object for conflict checking
+    const tempEvent: Partial<ParishEvent> = {
+      ...formData.value,
+      parishId: props.parishId,
+      // Don't include ID for new events
+      ...(editMode.value && props.event ? { id: props.event.id } : {})
+    };
+    
+    // Get existing events from parent or fetch if needed
+    // For now, we'll use an empty array - this should be passed as a prop
+    const existingEvents: ParishEvent[] = [];
+    
+    const detectedConflicts = conflictDetection.checkEventConflicts(
+      tempEvent,
+      existingEvents,
+      props.priests,
+      props.locations,
+      {
+        ignoreEventId: editMode.value ? props.event?.id : undefined,
+        checkPriests: true,
+        checkLocations: true,
+        checkLiturgical: true
+      }
+    );
+    
+    conflicts.value = detectedConflicts;
+  } catch (error) {
+    console.error('Conflict checking failed:', error);
+    conflicts.value = [];
+  } finally {
+    checkingConflicts.value = false;
+  }
+}
+
+function getConflictIcon(type: string) {
+  switch (type) {
+    case 'time_overlap': return timeOutline;
+    case 'priest_conflict': return peopleOutline;
+    case 'liturgical_conflict': return calendarOutline;
+    case 'resource_conflict': return warningOutline;
+    default: return informationCircleOutline;
+  }
+}
+
+function getConflictColor(severity: string) {
+  switch (severity) {
+    case 'error': return 'danger';
+    case 'warning': return 'warning';
+    case 'info': return 'primary';
+    default: return 'medium';
+  }
+}
 </script>
 
 <style scoped>
@@ -716,6 +850,55 @@ function applySuggestion(suggestion: EventSuggestion) {
 
 .suggestion-chips ion-chip:hover {
   transform: translateY(-1px);
+}
+
+.conflict-detection {
+  margin: 1rem 0;
+}
+
+.conflicts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.conflict-item {
+  --background: var(--ion-color-light-tint);
+  --border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.conflict-error {
+  color: var(--ion-color-danger);
+  font-weight: 600;
+}
+
+.conflict-warning {
+  color: var(--ion-color-warning);
+  font-weight: 500;
+}
+
+.conflict-info {
+  color: var(--ion-color-primary);
+}
+
+.conflict-suggestions {
+  margin-top: 0.5rem;
+}
+
+.conflict-suggestions ul {
+  margin: 0.25rem 0 0 1rem;
+  padding-left: 0;
+}
+
+.conflict-suggestions li {
+  font-size: 0.9rem;
+  color: var(--ion-color-medium);
+  margin-bottom: 0.25rem;
+}
+
+.conflicting-events {
+  margin-top: 0.5rem;
 }
 
 /* Mobile optimizations */

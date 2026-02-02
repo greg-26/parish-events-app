@@ -172,48 +172,44 @@
 
           <!-- Map Integration -->
           <div class="form-section">
-            <h3>🗺️ Map Integration</h3>
+            <h3>🗺️ Location Selection</h3>
             
-            <ion-item>
-              <ion-input
-                v-model="locationForm.osmNode"
-                label="OpenStreetMap Node ID (optional)"
-                label-placement="stacked"
-                placeholder="e.g., 123456789"
-                fill="outline"
-              />
-            </ion-item>
-            
-            <div class="coordinates-row">
+            <div class="current-coordinates" v-if="locationForm.coordinates.latitude && locationForm.coordinates.longitude">
               <ion-item>
-                <ion-input
-                  v-model="locationForm.coordinates.latitude"
-                  label="Latitude"
-                  label-placement="stacked"
-                  placeholder="40.7128"
-                  type="number"
-                  step="any"
-                  fill="outline"
-                />
-              </ion-item>
-              
-              <ion-item>
-                <ion-input
-                  v-model="locationForm.coordinates.longitude"
-                  label="Longitude"
-                  label-placement="stacked"
-                  placeholder="-74.0060"
-                  type="number"
-                  step="any"
-                  fill="outline"
-                />
+                <ion-label>
+                  <h4>Selected Coordinates</h4>
+                  <p>{{ locationForm.coordinates.latitude.toFixed(6) }}, {{ locationForm.coordinates.longitude.toFixed(6) }}</p>
+                  <ion-note v-if="locationForm.osmNode">
+                    OpenStreetMap Node: {{ locationForm.osmNode }}
+                  </ion-note>
+                </ion-label>
+                <ion-chip slot="end" color="success" outline>
+                  <ion-icon :icon="mapOutline" slot="start" />
+                  Located
+                </ion-chip>
               </ion-item>
             </div>
             
             <div class="map-actions">
-              <ion-button fill="outline" disabled>
+              <ion-button 
+                @click="showLocationPicker = true"
+                color="primary"
+                expand="block"
+              >
                 <ion-icon slot="start" :icon="mapOutline" />
-                Pick on Map (Coming Soon)
+                {{ (locationForm.coordinates.latitude && locationForm.coordinates.longitude) ? 
+                   'Change Location on Map' : 'Select Location on Map' }}
+              </ion-button>
+              
+              <ion-button 
+                v-if="locationForm.coordinates.latitude && locationForm.coordinates.longitude"
+                @click="clearCoordinates"
+                fill="clear"
+                color="medium"
+                expand="block"
+              >
+                <ion-icon slot="start" :icon="trashOutline" />
+                Clear Coordinates
               </ion-button>
             </div>
           </div>
@@ -241,6 +237,28 @@
         </form>
       </ion-content>
     </ion-modal>
+
+    <!-- Location Picker Modal -->
+    <ion-modal :is-open="showLocationPicker" @did-dismiss="showLocationPicker = false" class="location-picker-modal">
+      <ion-header>
+        <ion-toolbar>
+          <ion-title>Select Location on Map</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="showLocationPicker = false" fill="clear">
+              <ion-icon :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <LocationPicker
+          :initial-location="getInitialMapLocation()"
+          :country-code="locationForm.address.addressCountry?.toLowerCase()"
+          @location-selected="onLocationSelected"
+          @cancel="showLocationPicker = false"
+        />
+      </ion-content>
+    </ion-modal>
   </ion-content>
 </template>
 
@@ -248,7 +266,8 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '@/lib/api';
-import type { ParishLocation, PostalAddress } from '@/shared/types';
+import type { ParishLocation, PostalAddress, GeoCoordinates } from '@/shared/types';
+import LocationPicker from '@/components/LocationPicker.vue';
 import {
   IonContent,
   IonList,
@@ -268,6 +287,7 @@ import {
   IonSelect,
   IonSelectOption,
   IonCheckbox,
+  IonChip,
   alertController,
   toastController
 } from '@ionic/vue';
@@ -275,7 +295,8 @@ import {
   addOutline,
   locationOutline,
   closeOutline,
-  mapOutline
+  mapOutline,
+  trashOutline
 } from 'ionicons/icons';
 
 const route = useRoute();
@@ -287,6 +308,7 @@ const saving = ref(false);
 const locations = ref<ParishLocation[]>([]);
 const showCreateLocation = ref(false);
 const editingLocation = ref<ParishLocation | null>(null);
+const showLocationPicker = ref(false);
 
 const editMode = computed(() => !!editingLocation.value);
 
@@ -436,6 +458,59 @@ async function fetchLocations() {
   }
 }
 
+function getInitialMapLocation(): GeoCoordinates | undefined {
+  if (locationForm.value.coordinates.latitude && locationForm.value.coordinates.longitude) {
+    return {
+      latitude: locationForm.value.coordinates.latitude,
+      longitude: locationForm.value.coordinates.longitude
+    };
+  }
+  return undefined;
+}
+
+function onLocationSelected(selectedLocation: any) {
+  // Update form with selected location data
+  locationForm.value.coordinates.latitude = selectedLocation.coordinates.latitude;
+  locationForm.value.coordinates.longitude = selectedLocation.coordinates.longitude;
+  
+  if (selectedLocation.osmId) {
+    locationForm.value.osmNode = String(selectedLocation.osmId);
+  }
+  
+  // If the user selected a named location, suggest it as the location name
+  if (selectedLocation.name && !locationForm.value.name) {
+    locationForm.value.name = selectedLocation.name;
+  }
+  
+  // Auto-fill address if provided and current address is empty
+  if (selectedLocation.postalAddress) {
+    const pa = selectedLocation.postalAddress;
+    if (!locationForm.value.address.streetAddress && pa.streetAddress) {
+      locationForm.value.address.streetAddress = pa.streetAddress;
+    }
+    if (!locationForm.value.address.addressLocality && pa.addressLocality) {
+      locationForm.value.address.addressLocality = pa.addressLocality;
+    }
+    if (!locationForm.value.address.postalCode && pa.postalCode) {
+      locationForm.value.address.postalCode = pa.postalCode;
+    }
+    if (!locationForm.value.address.addressRegion && pa.addressRegion) {
+      locationForm.value.address.addressRegion = pa.addressRegion;
+    }
+    if (!locationForm.value.address.addressCountry && pa.addressCountry) {
+      locationForm.value.address.addressCountry = pa.addressCountry;
+    }
+  }
+  
+  showLocationPicker.value = false;
+}
+
+function clearCoordinates() {
+  locationForm.value.coordinates.latitude = null;
+  locationForm.value.coordinates.longitude = null;
+  locationForm.value.osmNode = '';
+}
+
 onMounted(async () => {
   await fetchLocations();
 });
@@ -573,6 +648,37 @@ onMounted(async () => {
   .location-badges {
     align-items: center;
     flex-direction: row;
+  }
+}
+
+:global(.location-picker-modal) {
+  --height: 90vh;
+  --width: 90vw;
+  --max-width: 900px;
+  --border-radius: 12px;
+}
+
+:global(.location-picker-modal ion-content) {
+  --padding-start: 0;
+  --padding-end: 0;
+  --padding-top: 0;
+  --padding-bottom: 0;
+}
+
+.current-coordinates {
+  margin-bottom: 1rem;
+}
+
+.map-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  :global(.location-picker-modal) {
+    --height: 95vh;
+    --width: 95vw;
   }
 }
 </style>
