@@ -1,13 +1,26 @@
 <template>
   <ion-content>
     <div class="container">
-      <!-- Header with Add Button -->
+      <!-- Header with Add Button and View Toggle -->
       <div class="section-header">
         <h2>Parish Events</h2>
-        <ion-button v-if="canManage" @click="showCreateEvent = true" color="primary">
-          <ion-icon slot="start" :icon="addOutline" />
-          Add Event
-        </ion-button>
+        <div class="header-actions">
+          <ion-segment v-model="viewMode" value="list">
+            <ion-segment-button value="list">
+              <ion-icon :icon="listOutline" />
+              <ion-label>List</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="calendar">
+              <ion-icon :icon="calendarOutline" />
+              <ion-label>Calendar</ion-label>
+            </ion-segment-button>
+          </ion-segment>
+          
+          <ion-button v-if="canManage" @click="showCreateEvent = true" color="primary">
+            <ion-icon slot="start" :icon="addOutline" />
+            Add Event
+          </ion-button>
+        </div>
       </div>
 
       <!-- Loading State -->
@@ -28,8 +41,22 @@
         </ion-button>
       </div>
 
+      <!-- Calendar View -->
+      <div v-if="viewMode === 'calendar'" class="calendar-view">
+        <CalendarView
+          :events="events"
+          :locations="locations"
+          :priests="priests"
+          :parish-id="parishId"
+          :can-manage="canManage"
+          @create-event="onCalendarCreateEvent"
+          @edit-event="editEvent"
+          @create-from-suggestion="onCreateFromSuggestion"
+        />
+      </div>
+
       <!-- Events List -->
-      <div v-else class="events-list">
+      <div v-else-if="viewMode === 'list' && events.length > 0" class="events-list">
         <ion-list>
           <ion-item 
             v-for="event in events" 
@@ -85,6 +112,7 @@
       :event="editingEvent"
       :locations="locations"
       :priests="priests"
+      :pending-suggestion="pendingSuggestion"
       @close="closeEventModal"
       @saved="onEventSaved"
     />
@@ -92,11 +120,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '@/lib/api';
 import type { ParishEvent, EventType } from '@/shared/types';
+import type { EventSuggestion } from '@/services/liturgicalCalendar';
 import EventFormView from '@/views/EventFormView.vue';
+import CalendarView from '@/components/CalendarView.vue';
 import {
   IonContent,
   IonList,
@@ -107,11 +137,14 @@ import {
   IonIcon,
   IonSpinner,
   IonChip,
+  IonSegment,
+  IonSegmentButton,
   alertController
 } from '@ionic/vue';
 import {
   addOutline,
   calendarOutline,
+  listOutline,
   churchOutline,
   timeOutline,
   prismOutline,
@@ -128,11 +161,13 @@ const loading = ref(true);
 const events = ref<ParishEvent[]>([]);
 const locations = ref<any[]>([]);
 const priests = ref<any[]>([]);
+const viewMode = ref('list');
 
 // Modal states
 const showCreateEvent = ref(false);
 const showEditEvent = ref(false);
 const editingEvent = ref<ParishEvent | null>(null);
+const pendingSuggestion = ref<{suggestion: EventSuggestion, date: string} | null>(null);
 
 function getEventIcon(eventType: EventType) {
   const icons = {
@@ -196,6 +231,7 @@ function closeEventModal() {
   showCreateEvent.value = false;
   showEditEvent.value = false;
   editingEvent.value = null;
+  pendingSuggestion.value = null;
 }
 
 function onEventSaved(event: ParishEvent) {
@@ -209,6 +245,18 @@ function onEventSaved(event: ParishEvent) {
     // Add new event
     events.value.push(event);
   }
+}
+
+function onCalendarCreateEvent(date: string) {
+  // Set specific date and open create modal
+  showCreateEvent.value = true;
+  // The EventFormView will pick up the date automatically
+}
+
+function onCreateFromSuggestion(suggestion: EventSuggestion, date: string) {
+  // Store suggestion to pre-fill form
+  pendingSuggestion.value = { suggestion, date };
+  showCreateEvent.value = true;
 }
 
 async function fetchEvents() {
@@ -268,10 +316,22 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  gap: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
+  flex-shrink: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.calendar-view {
+  margin-bottom: 2rem;
 }
 
 .loading {

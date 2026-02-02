@@ -648,13 +648,21 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
               
               const priest: Priest = {
                 id: priestId,
+                parishId: parishId,
+                title: data.title || 'Father',
                 name: data.name,
-                title: data.title,
+                preferredName: data.preferredName,
                 email: data.email,
-                active: data.active !== false,
-                parishId: data.pastoralUnitId ? undefined : parishId,
-                pastoralUnitId: data.pastoralUnitId,
-                isCoordinator: data.isCoordinator
+                phone: data.phone,
+                isParishPriest: data.isParishPriest || false,
+                isActive: data.isActive !== false,
+                ordainedDate: data.ordainedDate,
+                diocese: data.diocese,
+                languages: data.languages,
+                specialties: data.specialties,
+                createdAt: now,
+                updatedAt: now,
+                createdBy: user.sub
               };
               
               await dynamodb.send(new PutCommand({
@@ -663,13 +671,90 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
                   pk: `PARISH#${parishId}`,
                   sk: `PRIEST#${priestId}`,
                   ...priest,
-                  createdAt: now,
-                  updatedAt: now,
                   type: "priest"
                 }
               }));
               
               return json(priest);
+            }
+          }
+          
+          // Handle priest-specific operations
+          if (pathParts.length === 4 && pathParts[2] === "priests") {
+            const priestId = pathParts[3];
+            
+            if (method === "PUT") {
+              // PUT /parish/:id/priests/:priestId - Update priest
+              if (!await checkParishPermission(user.sub, parishId, 'manager')) {
+                return json({ error: "Insufficient permissions" }, 403);
+              }
+              
+              const now = new Date().toISOString();
+              
+              const updateExpressions = [];
+              const attributeNames: Record<string, string> = {};
+              const attributeValues: Record<string, any> = {
+                ":updatedAt": now
+              };
+              
+              // Build dynamic update expression
+              const updatableFields = [
+                'title', 'name', 'preferredName', 'email', 'phone', 
+                'isParishPriest', 'isActive', 'ordainedDate', 'diocese', 
+                'languages', 'specialties'
+              ];
+              
+              updatableFields.forEach(field => {
+                if (data[field] !== undefined) {
+                  const attrName = `#${field}`;
+                  const attrValue = `:${field}`;
+                  attributeNames[attrName] = field;
+                  attributeValues[attrValue] = data[field];
+                  updateExpressions.push(`${attrName} = ${attrValue}`);
+                }
+              });
+              
+              updateExpressions.push("#updatedAt = :updatedAt");
+              attributeNames["#updatedAt"] = "updatedAt";
+              
+              const result = await dynamodb.send(new UpdateCommand({
+                TableName: tableName,
+                Key: { pk: `PARISH#${parishId}`, sk: `PRIEST#${priestId}` },
+                UpdateExpression: `SET ${updateExpressions.join(", ")}`,
+                ExpressionAttributeNames: attributeNames,
+                ExpressionAttributeValues: attributeValues,
+                ReturnValues: "ALL_NEW"
+              }));
+              
+              return json(result.Attributes);
+            }
+            
+            if (method === "DELETE") {
+              // DELETE /parish/:id/priests/:priestId - Delete priest
+              if (!await checkParishPermission(user.sub, parishId, 'admin')) {
+                return json({ error: "Insufficient permissions" }, 403);
+              }
+              
+              await dynamodb.send(new DeleteCommand({
+                TableName: tableName,
+                Key: { pk: `PARISH#${parishId}`, sk: `PRIEST#${priestId}` }
+              }));
+              
+              return json({ success: true });
+            }
+            
+            if (method === "GET") {
+              // GET /parish/:id/priests/:priestId - Get specific priest
+              const priestResult = await dynamodb.send(new GetCommand({
+                TableName: tableName,
+                Key: { pk: `PARISH#${parishId}`, sk: `PRIEST#${priestId}` }
+              }));
+              
+              if (!priestResult.Item) {
+                return json({ error: "Priest not found" }, 404);
+              }
+              
+              return json(priestResult.Item);
             }
           }
         }

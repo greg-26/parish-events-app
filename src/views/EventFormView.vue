@@ -38,15 +38,65 @@
               fill="outline"
             >
               <ion-select-option value="mass">Mass</ion-select-option>
-              <ion-select-option value="adoration">Adoration</ion-select-option>
+              <ion-select-option value="adoration">Eucharistic Adoration</ion-select-option>
               <ion-select-option value="confession">Confession</ion-select-option>
-              <ion-select-option value="vespers">Vespers</ion-select-option>
+              <ion-select-option value="vespers">Vespers/Evening Prayer</ion-select-option>
               <ion-select-option value="rosary">Rosary</ion-select-option>
-              <ion-select-option value="meeting">Meeting</ion-select-option>
-              <ion-select-option value="celebration">Celebration</ion-select-option>
+              <ion-select-option value="stations">Stations of the Cross</ion-select-option>
+              <ion-select-option value="novena">Novena</ion-select-option>
+              <ion-select-option value="retreat">Retreat</ion-select-option>
+              <ion-select-option value="catechesis">Catechesis/Religious Education</ion-select-option>
+              <ion-select-option value="youth">Youth Ministry</ion-select-option>
+              <ion-select-option value="meeting">Parish Meeting</ion-select-option>
+              <ion-select-option value="celebration">Celebration/Festival</ion-select-option>
+              <ion-select-option value="wedding">Wedding</ion-select-option>
+              <ion-select-option value="funeral">Funeral/Memorial</ion-select-option>
+              <ion-select-option value="baptism">Baptism</ion-select-option>
+              <ion-select-option value="confirmation">Confirmation</ion-select-option>
               <ion-select-option value="other">Other</ion-select-option>
             </ion-select>
           </ion-item>
+
+          <!-- Liturgical Calendar Integration -->
+          <div v-if="liturgicalInfo" class="liturgical-info">
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>
+                  <ion-icon :icon="sparklesOutline" />
+                  Liturgical Calendar
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                <div class="liturgical-details">
+                  <ion-chip :color="getLiturgicalColorCode(liturgicalInfo.color)" outline>
+                    {{ liturgicalInfo.season }}
+                  </ion-chip>
+                  <ion-chip color="medium" outline>
+                    {{ liturgicalInfo.rank }}
+                  </ion-chip>
+                  <p><strong>{{ liturgicalInfo.name }}</strong></p>
+                  
+                  <!-- Event Suggestions -->
+                  <div v-if="liturgicalInfo.suggestedEvents?.length" class="event-suggestions">
+                    <h4>✨ Suggested Events</h4>
+                    <div class="suggestion-chips">
+                      <ion-chip 
+                        v-for="suggestion in liturgicalInfo.suggestedEvents" 
+                        :key="suggestion.name"
+                        :color="getSuggestionColor(suggestion.priority)"
+                        @click="applySuggestion(suggestion)"
+                        button
+                      >
+                        <ion-icon :icon="timeOutline" slot="start" />
+                        {{ suggestion.name }}
+                        <span v-if="suggestion.recommendedTime"> • {{ suggestion.recommendedTime }}</span>
+                      </ion-chip>
+                    </div>
+                  </div>
+                </div>
+              </ion-card-content>
+            </ion-card>
+          </div>
           
           <ion-item>
             <ion-textarea
@@ -309,7 +359,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { api } from '@/lib/api';
+import { liturgicalCalendar } from '@/services/liturgicalCalendar';
 import type { ParishEvent, EventSchedule, WeekDay, EventType } from '@/shared/types';
+import type { EventSuggestion, LiturgicalDay } from '@/services/liturgicalCalendar';
 import {
   IonModal,
   IonHeader,
@@ -329,12 +381,20 @@ import {
   IonDatetimeButton,
   IonDatetime,
   IonSpinner,
+  IonChip,
+  IonCard,
+  IonCardContent,
+  IonCardHeader,
+  IonCardTitle,
   alertController,
   toastController
 } from '@ionic/vue';
 import {
   closeOutline,
-  addOutline
+  addOutline,
+  sparklesOutline,
+  calendarOutline,
+  timeOutline
 } from 'ionicons/icons';
 
 interface Props {
@@ -343,6 +403,7 @@ interface Props {
   event?: ParishEvent | null;
   locations: any[];
   priests: any[];
+  pendingSuggestion?: {suggestion: EventSuggestion, date: string} | null;
 }
 
 interface Emits {
@@ -357,6 +418,7 @@ const editMode = computed(() => !!props.event);
 const saving = ref(false);
 const showAddLocation = ref(false);
 const showAddPriest = ref(false);
+const liturgicalInfo = ref<LiturgicalDay | null>(null);
 
 const formData = ref({
   name: '',
@@ -397,6 +459,20 @@ watch(() => props.isOpen, (isOpen) => {
   }
 });
 
+// Watch for date changes to update liturgical info
+watch(() => formData.value.specificDate, (newDate) => {
+  if (newDate) {
+    updateLiturgicalInfo(new Date(newDate));
+  }
+});
+
+// Watch for recurring schedule changes
+watch(() => formData.value.schedule.startDate, (newStartDate) => {
+  if (newStartDate && formData.value.isRecurring) {
+    updateLiturgicalInfo(new Date(newStartDate));
+  }
+});
+
 function resetForm() {
   if (props.event) {
     // Edit mode - populate form
@@ -421,6 +497,36 @@ function resetForm() {
       additionalType: props.event.additionalType || '',
       image: props.event.image || ''
     };
+  } else if (props.pendingSuggestion) {
+    // Create from suggestion mode
+    const { suggestion, date } = props.pendingSuggestion;
+    formData.value = {
+      name: suggestion.name,
+      eventType: suggestion.type as EventType,
+      description: suggestion.description,
+      locationId: '',
+      celebrantId: '',
+      assistantIds: [],
+      isRecurring: false,
+      specificDate: date,
+      schedule: {
+        startTime: suggestion.recommendedTime || '09:00',
+        endTime: '',
+        byDay: [],
+        repeatFrequency: 'P1W',
+        startDate: '',
+        endDate: '',
+        exceptDates: []
+      },
+      additionalType: '',
+      image: ''
+    };
+    
+    // Set default location if available
+    if (props.locations.length > 0) {
+      const defaultLocation = props.locations.find(l => l.isDefault) || props.locations[0];
+      formData.value.locationId = defaultLocation.id;
+    }
   } else {
     // Create mode - reset form
     formData.value = {
@@ -488,6 +594,41 @@ async function handleSubmit() {
     saving.value = false;
   }
 }
+
+function updateLiturgicalInfo(date: Date) {
+  liturgicalInfo.value = liturgicalCalendar.getLiturgicalDay(date);
+}
+
+function getLiturgicalColorCode(liturgicalColor: string): string {
+  const colorMap: Record<string, string> = {
+    'white': 'light',
+    'red': 'danger',
+    'green': 'success',
+    'purple': 'secondary',
+    'rose': 'warning',
+    'black': 'dark'
+  };
+  return colorMap[liturgicalColor] || 'medium';
+}
+
+function getSuggestionColor(priority: string): string {
+  const priorityMap: Record<string, string> = {
+    'high': 'primary',
+    'medium': 'secondary',
+    'low': 'tertiary'
+  };
+  return priorityMap[priority] || 'medium';
+}
+
+function applySuggestion(suggestion: EventSuggestion) {
+  formData.value.name = suggestion.name;
+  formData.value.eventType = suggestion.type as EventType;
+  formData.value.description = suggestion.description;
+  
+  if (suggestion.recommendedTime) {
+    formData.value.schedule.startTime = suggestion.recommendedTime;
+  }
+}
 </script>
 
 <style scoped>
@@ -540,6 +681,41 @@ async function handleSubmit() {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 0.5rem;
+}
+
+.liturgical-info {
+  margin: 1rem 0;
+}
+
+.liturgical-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.liturgical-details p {
+  margin: 0.5rem 0;
+}
+
+.event-suggestions h4 {
+  margin: 1rem 0 0.5rem 0;
+  font-size: 1rem;
+  color: var(--ion-color-primary);
+}
+
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.suggestion-chips ion-chip {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.suggestion-chips ion-chip:hover {
+  transform: translateY(-1px);
 }
 
 /* Mobile optimizations */
