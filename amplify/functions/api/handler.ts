@@ -10,7 +10,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { 
   Parish, ParishEvent, ParishLocation, Priest, User, ParishMembership,
-  JsonLdEvent, ParishEventsPublicResponse, EventSchedule, WeekDay 
+  PastoralUnit, JsonLdEvent, ParishEventsPublicResponse, EventSchedule, WeekDay 
 } from "../../../shared/types";
 
 const dynamodb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -263,6 +263,109 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
       });
     }
 
+    // Pastoral Units routes
+    if (path.startsWith("/pastoral-units")) {
+      const pathParts = path.split("/").filter(Boolean);
+      
+      if (method === "GET" && pathParts.length === 1) {
+        // GET /pastoral-units - List user's pastoral units
+        const userParishes = await dynamodb.send(new QueryCommand({
+          TableName: tableName,
+          KeyConditionExpression: "pk = :pk",
+          ExpressionAttributeValues: { ":pk": `USER#${user.sub}` }
+        }));
+        
+        const pastoralUnits = new Set<string>();
+        for (const item of userParishes.Items || []) {
+          if (item.sk.startsWith("MEMBERSHIP#")) {
+            const parishId = item.parishId;
+            // Get parish to check if it's part of a pastoral unit
+            const parishResult = await dynamodb.send(new GetCommand({
+              TableName: tableName,
+              Key: { pk: `PARISH#${parishId}`, sk: "METADATA" }
+            }));
+            if (parishResult.Item?.pastoralUnitId) {
+              pastoralUnits.add(parishResult.Item.pastoralUnitId);
+            }
+          }
+        }
+        
+        const units = [];
+        for (const unitId of pastoralUnits) {
+          const unitResult = await dynamodb.send(new GetCommand({
+            TableName: tableName,
+            Key: { pk: `PASTORAL_UNIT#${unitId}`, sk: "METADATA" }
+          }));
+          if (unitResult.Item) units.push(unitResult.Item);
+        }
+        
+        return json(units);
+      }
+      
+      if (method === "POST" && pathParts.length === 1) {
+        // POST /pastoral-units - Create pastoral unit
+        const unitId = generateId();
+        const now = new Date().toISOString();
+        
+        const pastoralUnit: PastoralUnit = {
+          id: unitId,
+          name: data.name,
+          description: data.description,
+          parishes: data.parishes || [],
+          sharedPriests: [],
+          coordinator: data.coordinator,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: user.sub
+        };
+        
+        // Create pastoral unit record
+        await dynamodb.send(new PutCommand({
+          TableName: tableName,
+          Item: {
+            pk: `PASTORAL_UNIT#${unitId}`,
+            sk: "METADATA",
+            ...pastoralUnit,
+            type: "pastoral_unit"
+          }
+        }));
+        
+        // Update parishes to link to pastoral unit
+        for (const parishId of pastoralUnit.parishes) {
+          await dynamodb.send(new UpdateCommand({
+            TableName: tableName,
+            Key: { pk: `PARISH#${parishId}`, sk: "METADATA" },
+            UpdateExpression: "SET pastoralUnitId = :unitId, updatedAt = :now",
+            ExpressionAttributeValues: {
+              ":unitId": unitId,
+              ":now": now
+            }
+          }));
+        }
+        
+        return json(pastoralUnit);
+      }
+    }
+    
+    if (path.startsWith("/pastoral-unit/")) {
+      const pathParts = path.split("/").filter(Boolean);
+      const unitId = pathParts[1];
+      
+      if (method === "GET" && pathParts.length === 2) {
+        // GET /pastoral-unit/:id - Get pastoral unit details
+        const unitResult = await dynamodb.send(new GetCommand({
+          TableName: tableName,
+          Key: { pk: `PASTORAL_UNIT#${unitId}`, sk: "METADATA" }
+        }));
+        
+        if (!unitResult.Item) {
+          return json({ error: "Pastoral unit not found" }, 404);
+        }
+        
+        return json(unitResult.Item);
+      }
+    }
+
     // Parish routes
     if (path.startsWith("/parish")) {
       const pathParts = path.split("/").filter(Boolean);
@@ -312,6 +415,7 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
           description: data.description,
           website: data.website,
           timezone: data.timezone || "UTC",
+          pastoralUnitId: data.pastoralUnitId,
           locations: [],
           priests: [],
           createdAt: now,
@@ -360,7 +464,215 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
           }
         }));
         
+        // If pastoral unit provided, add parish to unit
+        if (data.pastoralUnitId) {
+          await dynamodb.send(new UpdateCommand({
+            TableName: tableName,
+            Key: { pk: `PASTORAL_UNIT#${data.pastoralUnitId}`, sk: "METADATA" },
+            UpdateExpression: "SET parishes = list_append(if_not_exists(parishes, :empty_list), :parish_id), updatedAt = :now",
+            ExpressionAttributeValues: {
+              ":parish_id": [parishId],
+              ":empty_list": [],
+              ":now": now
+            }
+          }));
+        }
+        
         return json(parish);
+      }
+      
+      if (pathParts.length >= 2) {
+        const parishId = pathParts[1];
+        
+        // Check user permission for this parish
+        if (!await checkParishPermission(user.sub, parishId, 'viewer')) {
+          return json({ error: "Access denied" }, 403);
+        }
+        
+        if (method === "GET" && pathParts.length === 2) {
+          // GET /parish/:id - Get parish details
+          const parishResult = await dynamodb.send(new GetCommand({
+            TableName: tableName,
+            Key: { pk: `PARISH#${parishId}`, sk: "METADATA" }
+          }));
+          
+          if (!parishResult.Item) {
+            return json({ error: "Parish not found" }, 404);
+          }
+          
+          // Get user's role
+          const memberResult = await dynamodb.send(new GetCommand({
+            TableName: tableName,
+            Key: { pk: `PARISH#${parishId}`, sk: `MEMBER#${user.sub}` }
+          }));
+          
+          return json({
+            parish: parishResult.Item,
+            userRole: memberResult.Item?.role || 'viewer'
+          });
+        }
+        
+        // Parish sub-resources (events, locations, priests)
+        if (pathParts.length === 3) {
+          const resource = pathParts[2];
+          
+          if (resource === "events") {
+            if (method === "GET") {
+              // GET /parish/:id/events - List parish events
+              const eventsResult = await dynamodb.send(new QueryCommand({
+                TableName: tableName,
+                KeyConditionExpression: "pk = :pk AND begins_with(sk, :sk)",
+                ExpressionAttributeValues: {
+                  ":pk": `PARISH#${parishId}`,
+                  ":sk": "EVENT#"
+                }
+              }));
+              
+              return json(eventsResult.Items || []);
+            }
+            
+            if (method === "POST") {
+              // POST /parish/:id/events - Create event
+              if (!await checkParishPermission(user.sub, parishId, 'manager')) {
+                return json({ error: "Insufficient permissions" }, 403);
+              }
+              
+              const eventId = generateId();
+              const now = new Date().toISOString();
+              
+              const event: ParishEvent = {
+                id: eventId,
+                parishId,
+                name: data.name,
+                description: data.description,
+                eventType: data.eventType,
+                locationId: data.locationId,
+                celebrantId: data.celebrantId,
+                assistantIds: data.assistantIds,
+                isRecurring: data.isRecurring,
+                schedule: data.schedule,
+                specificDate: data.specificDate,
+                additionalType: data.additionalType,
+                image: data.image,
+                createdAt: now,
+                updatedAt: now,
+                createdBy: user.sub
+              };
+              
+              await dynamodb.send(new PutCommand({
+                TableName: tableName,
+                Item: {
+                  pk: `PARISH#${parishId}`,
+                  sk: `EVENT#${eventId}`,
+                  ...event,
+                  type: "event"
+                }
+              }));
+              
+              return json(event);
+            }
+          }
+          
+          if (resource === "locations") {
+            if (method === "GET") {
+              // GET /parish/:id/locations - List parish locations
+              const locationsResult = await dynamodb.send(new QueryCommand({
+                TableName: tableName,
+                KeyConditionExpression: "pk = :pk AND begins_with(sk, :sk)",
+                ExpressionAttributeValues: {
+                  ":pk": `PARISH#${parishId}`,
+                  ":sk": "LOCATION#"
+                }
+              }));
+              
+              return json(locationsResult.Items || []);
+            }
+            
+            if (method === "POST") {
+              // POST /parish/:id/locations - Create location
+              if (!await checkParishPermission(user.sub, parishId, 'manager')) {
+                return json({ error: "Insufficient permissions" }, 403);
+              }
+              
+              const locationId = generateId();
+              const now = new Date().toISOString();
+              
+              const location: ParishLocation = {
+                id: locationId,
+                name: data.name,
+                address: data.address,
+                osmNode: data.osmNode,
+                coordinates: data.coordinates,
+                isDefault: data.isDefault
+              };
+              
+              await dynamodb.send(new PutCommand({
+                TableName: tableName,
+                Item: {
+                  pk: `PARISH#${parishId}`,
+                  sk: `LOCATION#${locationId}`,
+                  ...location,
+                  createdAt: now,
+                  updatedAt: now,
+                  type: "location"
+                }
+              }));
+              
+              return json(location);
+            }
+          }
+          
+          if (resource === "priests") {
+            if (method === "GET") {
+              // GET /parish/:id/priests - List parish priests
+              const priestsResult = await dynamodb.send(new QueryCommand({
+                TableName: tableName,
+                KeyConditionExpression: "pk = :pk AND begins_with(sk, :sk)",
+                ExpressionAttributeValues: {
+                  ":pk": `PARISH#${parishId}`,
+                  ":sk": "PRIEST#"
+                }
+              }));
+              
+              return json(priestsResult.Items || []);
+            }
+            
+            if (method === "POST") {
+              // POST /parish/:id/priests - Create priest
+              if (!await checkParishPermission(user.sub, parishId, 'manager')) {
+                return json({ error: "Insufficient permissions" }, 403);
+              }
+              
+              const priestId = generateId();
+              const now = new Date().toISOString();
+              
+              const priest: Priest = {
+                id: priestId,
+                name: data.name,
+                title: data.title,
+                email: data.email,
+                active: data.active !== false,
+                parishId: data.pastoralUnitId ? undefined : parishId,
+                pastoralUnitId: data.pastoralUnitId,
+                isCoordinator: data.isCoordinator
+              };
+              
+              await dynamodb.send(new PutCommand({
+                TableName: tableName,
+                Item: {
+                  pk: `PARISH#${parishId}`,
+                  sk: `PRIEST#${priestId}`,
+                  ...priest,
+                  createdAt: now,
+                  updatedAt: now,
+                  type: "priest"
+                }
+              }));
+              
+              return json(priest);
+            }
+          }
+        }
       }
     }
 

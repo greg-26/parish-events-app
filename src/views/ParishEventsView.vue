@@ -78,32 +78,16 @@
       </div>
     </div>
 
-    <!-- Create Event Modal (Placeholder) -->
-    <ion-modal :is-open="showCreateEvent" @did-dismiss="showCreateEvent = false">
-      <ion-header>
-        <ion-toolbar>
-          <ion-title>Create Event</ion-title>
-          <ion-buttons slot="end">
-            <ion-button @click="showCreateEvent = false" fill="clear">
-              <ion-icon :icon="closeOutline" />
-            </ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-      <ion-content>
-        <div class="modal-content">
-          <p>Event creation form coming soon...</p>
-          <p>This will include:</p>
-          <ul>
-            <li>Event name and type (Mass, Adoration, etc.)</li>
-            <li>Location selection from parish locations</li>
-            <li>Date/time scheduling with recurrence patterns</li>
-            <li>Priest assignment</li>
-            <li>Description and special notes</li>
-          </ul>
-        </div>
-      </ion-content>
-    </ion-modal>
+    <!-- Event Form Modal -->
+    <EventFormView
+      :is-open="showCreateEvent || showEditEvent"
+      :parish-id="parishId"
+      :event="editingEvent"
+      :locations="locations"
+      :priests="priests"
+      @close="closeEventModal"
+      @saved="onEventSaved"
+    />
   </ion-content>
 </template>
 
@@ -112,6 +96,7 @@ import { ref, computed, onMounted, inject } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '@/lib/api';
 import type { ParishEvent, EventType } from '@/shared/types';
+import EventFormView from '@/views/EventFormView.vue';
 import {
   IonContent,
   IonList,
@@ -122,11 +107,7 @@ import {
   IonIcon,
   IonSpinner,
   IonChip,
-  IonModal,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
-  IonButtons
+  alertController
 } from '@ionic/vue';
 import {
   addOutline,
@@ -136,21 +117,22 @@ import {
   prismOutline,
   bookOutline,
   peopleOutline,
-  helpOutline,
-  closeOutline
+  helpOutline
 } from 'ionicons/icons';
 
 const route = useRoute();
 const parishId = computed(() => route.params.id as string);
 
-// Assume these are provided by parent or through context
 const canManage = ref(true); // TODO: Get from parent component
-const locations = ref<any[]>([]); // TODO: Fetch locations
-const priests = ref<any[]>([]); // TODO: Fetch priests
-
 const loading = ref(true);
 const events = ref<ParishEvent[]>([]);
+const locations = ref<any[]>([]);
+const priests = ref<any[]>([]);
+
+// Modal states
 const showCreateEvent = ref(false);
+const showEditEvent = ref(false);
+const editingEvent = ref<ParishEvent | null>(null);
 
 function getEventIcon(eventType: EventType) {
   const icons = {
@@ -206,24 +188,71 @@ function getPriestName(priestId: string): string {
 
 function editEvent(event: ParishEvent) {
   if (!canManage.value) return;
-  console.log('Edit event:', event);
-  // TODO: Open edit modal
+  editingEvent.value = event;
+  showEditEvent.value = true;
+}
+
+function closeEventModal() {
+  showCreateEvent.value = false;
+  showEditEvent.value = false;
+  editingEvent.value = null;
+}
+
+function onEventSaved(event: ParishEvent) {
+  if (editingEvent.value) {
+    // Update existing event
+    const index = events.value.findIndex(e => e.id === event.id);
+    if (index >= 0) {
+      events.value[index] = event;
+    }
+  } else {
+    // Add new event
+    events.value.push(event);
+  }
 }
 
 async function fetchEvents() {
   try {
     loading.value = true;
-    // TODO: Implement API call
-    events.value = [];
+    const response = await api.get(`/parish/${parishId.value}/events`);
+    events.value = response;
   } catch (error) {
     console.error('Failed to fetch events:', error);
+    const alert = await alertController.create({
+      header: 'Error',
+      message: 'Failed to load events. Please try again.',
+      buttons: ['OK']
+    });
+    await alert.present();
   } finally {
     loading.value = false;
   }
 }
 
+async function fetchLocations() {
+  try {
+    const response = await api.get(`/parish/${parishId.value}/locations`);
+    locations.value = response;
+  } catch (error) {
+    console.error('Failed to fetch locations:', error);
+  }
+}
+
+async function fetchPriests() {
+  try {
+    const response = await api.get(`/parish/${parishId.value}/priests`);
+    priests.value = response;
+  } catch (error) {
+    console.error('Failed to fetch priests:', error);
+  }
+}
+
 onMounted(async () => {
-  await fetchEvents();
+  await Promise.all([
+    fetchEvents(),
+    fetchLocations(),
+    fetchPriests()
+  ]);
 });
 </script>
 
@@ -299,12 +328,56 @@ onMounted(async () => {
   gap: 0.5rem;
 }
 
-.modal-content {
-  padding: 1rem;
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .container {
+    padding: 0.5rem;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  
+  .section-header h2 {
+    text-align: center;
+    font-size: 1.5rem;
+  }
+  
+  .priests {
+    gap: 0.125rem;
+  }
+  
+  .priests ion-chip {
+    font-size: 0.75rem;
+    --border-radius: 12px;
+  }
+  
+  .event-type-indicator {
+    width: 32px;
+    height: 32px;
+    margin-right: 0.75rem;
+  }
+  
+  .event-actions {
+    margin-left: 0.5rem;
+  }
 }
 
-.modal-content ul {
-  margin: 1rem 0;
-  padding-left: 1.5rem;
+@media (max-width: 480px) {
+  ion-item {
+    --padding-start: 12px;
+    --padding-end: 12px;
+  }
+  
+  .event-type-indicator {
+    display: none;
+  }
+  
+  .priests {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

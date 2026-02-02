@@ -267,6 +267,23 @@ onMounted(async () => {
   padding: 1rem;
 }
 
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .container {
+    padding: 0.5rem;
+  }
+  
+  .header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+}
+
 .header {
   text-align: center;
   margin-bottom: 2rem;

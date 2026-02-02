@@ -368,6 +368,41 @@ onMounted(async () => {
   padding: 1rem;
 }
 
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .container {
+    padding: 0.5rem;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  
+  .section-header h1 {
+    font-size: 1.5rem;
+    text-align: center;
+  }
+  
+  .parishes-chips {
+    gap: 0.125rem;
+  }
+  
+  .parishes-chips ion-chip {
+    font-size: 0.75rem;
+  }
+  
+  .modal-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .modal-actions ion-button {
+    margin: 0;
+  }
+}
+
 .section {
   margin: 2rem 0;
 }

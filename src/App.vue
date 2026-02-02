@@ -28,10 +28,11 @@
       </template>
 
       <template v-slot:header>
-        <div style="text-align: center; padding: 1rem">
-          <h1 style="font-size: 2rem; line-height: normal">⛪ Parish Events Manager</h1>
-          <p>Manage your parish events and Mass schedules with modern tools.</p>
-          <p>Login with your email and password to get started.</p>
+        <div style="text-align: center; padding: 1.5rem">
+          <div style="font-size: 3rem; margin-bottom: 1rem">⛪</div>
+          <h1 style="font-size: 1.75rem; line-height: 1.2; margin-bottom: 1rem; font-weight: 600">Parish Events Manager</h1>
+          <p style="font-size: 1rem; color: var(--ion-color-medium); margin-bottom: 0.5rem">Manage your parish events and Mass schedules with modern tools.</p>
+          <p style="font-size: 0.9rem; color: var(--ion-color-medium)">Login with your email and password to get started.</p>
         </div>
       </template>
     </authenticator>
