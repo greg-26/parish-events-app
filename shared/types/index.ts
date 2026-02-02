@@ -1,14 +1,27 @@
 // Shared Types for Parish Events App
 // Used by both frontend and backend
 
+export interface PastoralUnit {
+  id: string;
+  name: string;
+  description?: string;
+  parishes: string[]; // Parish IDs in this pastoral unit
+  sharedPriests: string[]; // Priest IDs shared across parishes
+  coordinator?: string; // Priest ID of the coordinator
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string; // user ID
+}
+
 export interface Parish {
   id: string;
   name: string;
   description?: string;
   website?: string;
   timezone: string; // IANA timezone (e.g., "Europe/Madrid")
+  pastoralUnitId?: string; // references PastoralUnit.id
   locations: ParishLocation[];
-  priests: Priest[];
+  priests: Priest[]; // parish-specific priests
   createdAt: string;
   updatedAt: string;
   createdBy: string; // user ID
@@ -40,7 +53,9 @@ export interface Priest {
   title?: string; // "Fr.", "Msgr.", "Bishop", etc.
   email?: string;
   active: boolean;
-  parishId: string;
+  parishId?: string; // specific to one parish
+  pastoralUnitId?: string; // shared across pastoral unit parishes
+  isCoordinator?: boolean; // pastoral unit coordinator
 }
 
 export interface ParishEvent {
@@ -177,8 +192,8 @@ export interface JsonLdPerson {
 }
 
 // DynamoDB Key Patterns
-// PK = "PARISH#{parishId}" | "USER#{userId}" | "EVENT#{eventId}"
-// SK = "METADATA" | "LOCATION#{locationId}" | "PRIEST#{priestId}" | "MEMBER#{userId}" | "EVENT#{eventId}"
+// PK = "PARISH#{parishId}" | "USER#{userId}" | "EVENT#{eventId}" | "PASTORAL_UNIT#{pastoralUnitId}"
+// SK = "METADATA" | "LOCATION#{locationId}" | "PRIEST#{priestId}" | "MEMBER#{userId}" | "EVENT#{eventId}" | "PARISH#{parishId}"
 
 export interface DynamoDBRecord {
   pk: string;

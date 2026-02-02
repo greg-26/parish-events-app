@@ -5,6 +5,20 @@ const routes = [
   { path: "/", component: HomeView },
   { path: "/me", component: () => import("./views/MeView.vue") },
 
+  // Pastoral Unit management routes
+  { path: "/pastoral-units", component: () => import("./views/PastoralUnitsView.vue") },
+  { 
+    path: "/pastoral-unit/:id", 
+    component: () => import("./views/PastoralUnitView.vue"),
+    children: [
+      { path: "", redirect: to => `/pastoral-unit/${to.params.id}/overview` },
+      { path: "overview", component: () => import("./views/PastoralUnitOverviewView.vue") },
+      { path: "parishes", component: () => import("./views/PastoralUnitParishesView.vue") },
+      { path: "priests", component: () => import("./views/PastoralUnitPriestsView.vue") },
+      { path: "calendar", component: () => import("./views/PastoralUnitCalendarView.vue") }
+    ]
+  },
+
   // Parish management routes
   { 
     path: "/parish/:id", 

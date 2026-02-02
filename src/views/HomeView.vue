@@ -7,6 +7,14 @@
         <p v-if="userStore.user">Welcome, {{ userStore.user.nickname || userStore.user.email }}</p>
       </div>
 
+      <!-- Quick Navigation -->
+      <div class="quick-nav">
+        <ion-button @click="$router.push('/pastoral-units')" fill="outline" expand="block">
+          <ion-icon slot="start" :icon="peopleCircleOutline" />
+          Pastoral Units (Unidades Pastorales)
+        </ion-button>
+      </div>
+
       <!-- Loading State -->
       <div v-if="loading" class="loading">
         <ion-spinner />
@@ -177,7 +185,8 @@ import {
   businessOutline,
   addOutline,
   calendarOutline,
-  closeOutline
+  closeOutline,
+  peopleCircleOutline
 } from 'ionicons/icons';
 
 const router = useRouter();
@@ -266,6 +275,10 @@ onMounted(async () => {
 .header h1 {
   font-size: 2rem;
   margin-bottom: 0.5rem;
+}
+
+.quick-nav {
+  margin-bottom: 2rem;
 }
 
 .loading {
