@@ -1,0 +1,12 @@
+{
+  "name": "stream-worker-function",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "DynamoDB stream processor",
+  "main": "handler.ts",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.873.0",
+    "@aws-sdk/lib-dynamodb": "^3.873.0",
+    "@aws-sdk/util-dynamodb": "^3.876.0"
+  }
+}

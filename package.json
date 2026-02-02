@@ -1,0 +1,52 @@
+{
+  "name": "parish-events-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.4.0",
+  "description": "Parish Events Manager - helping parishes organize events following the Mass Times Protocol",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build --force",
+    "tc": "vue-tsc --build --force",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sb": "npx ampx sandbox --profile ${AWS_PROFILE:?Set AWS_PROFILE in .env}"
+  },
+  "dependencies": {
+    "@aws-amplify/ui-vue": "^4.3.3",
+    "@capacitor/core": "^8.0.2",
+    "@ionic/vue": "^8.7.17",
+    "@ionic/vue-router": "^8.7.17",
+    "aws-amplify": "^6.15.5",
+    "ionicons": "^8.0.13",
+    "pinia": "^3.0.3",
+    "vue": "^3.4.21",
+    "vue-router": "^4.5.1",
+    "@vueuse/core": "^11.1.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
+  },
+  "devDependencies": {
+    "@aws-amplify/backend": "^1.5.0",
+    "@aws-amplify/backend-cli": "^1.2.9",
+    "@capacitor/cli": "^8.0.2",
+    "@tsconfig/node20": "^20.1.4",
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^20.19.11",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "@vue/test-utils": "^2.4.6",
+    "@vue/tsconfig": "^0.5.1",
+    "esbuild": "^0.20.2",
+    "happy-dom": "^20.4.0",
+    "npm-run-all2": "^6.1.2",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.10",
+    "vitest": "^4.0.18",
+    "vue-tsc": "^2.0.11"
+  }
+}

@@ -1,0 +1,34 @@
+version: 1
+
+backend:
+  phases:
+    preBuild:
+      commands:
+        - corepack enable
+        - pnpm config set store-dir .pnpm-store
+        - rm -rf node_modules
+        - pnpm install --frozen-lockfile
+    build:
+      commands:
+        - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - corepack enable
+        - pnpm config set store-dir .pnpm-store
+        - rm -rf node_modules
+        - pnpm install --frozen-lockfile
+    build:
+      commands:
+        - pnpm run build
+
+  artifacts:
+    baseDirectory: dist
+    files:
+      - "**/*"
+
+  cache:
+    paths:
+      - .pnpm-store/**/*
