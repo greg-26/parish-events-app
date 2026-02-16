@@ -11,11 +11,10 @@ This parish event management application includes specialized AI agent context f
 
 ## How It Works
 
-The `agents/` folder contains parish-focused expertise:
-- **AGENT.md** - Parish domain specialization and responsibilities
-- **MEMORY.md** - Catholic parish operational knowledge
-- **NOTES.md** - Liturgical calendar insights and workflow observations
-- **TODO.md** - Parish feature priorities and development roadmap
+The agent provides parish-focused assistance through:
+- **GitHub Issues** - Feature development and bug tracking with parish-specific context
+- **Code Review** - Ensuring Catholic liturgical accuracy and parish workflow appropriateness
+- **Architecture Guidance** - Mass Times Protocol integration and parish operational needs
 
 ## Benefits
 
